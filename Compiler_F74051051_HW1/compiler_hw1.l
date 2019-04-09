@@ -40,24 +40,25 @@ INTEGER             ([0-9]+)
 <COMMENT>\n     	{ printf("%s", yytext); ++no_of_comments; ++no_of_lines; }
 <COMMENT>"*/"   	{ 
 						printf("%s", yytext);
-						printf("\t C Comment\n");
+						printf(" \t C Comment\n");
 						comment_newline = 1;
 						BEGIN INITIAL;
                 	}
 
 	/* Delimiters */
-"("						{ printf("%s \t LB \n", yytext); }
-")"						{ printf("%s \t RB \n", yytext); }
-"{"						{ printf("%s \t LCB \n", yytext); }
-"}"						{ printf("%s \t RCB \n", yytext); }
-"["						{ printf("%s \t LSB \n", yytext); }
-"]"						{ printf("%s \t RSB \n", yytext); }
-";"						{ printf("%s \t SEMICOLON \n", yytext); }
-","						{ printf("%s \t COMMA \n", yytext); }
-"\042"					{ printf("%s \t QUOTA \n", yytext); BEGIN STRING; }
-<STRING>[^\042\n]*    	{ { printf("%s \t STR_CONST \n", yytext); } }
+"("						{ printf("%s \t LB\n", yytext); }
+")"						{ printf("%s \t RB\n", yytext); }
+"{"						{ printf("%s \t LCB\n", yytext); }
+"}"						{ printf("%s \t RCB\n", yytext); }
+"["						{ printf("%s \t LSB\n", yytext); }
+"]"						{ printf("%s \t RSB\n", yytext); }
+";"						{ printf("%s \t SEMICOLON\n", yytext); }
+","						{ printf("%s \t COMMA\n", yytext); }
+"\042"					{ printf("%s \t QUOTA\n", yytext); BEGIN STRING; }
+<STRING>[ \t\r\a\n]+		{	}
+<STRING>[^\042]*    	{ printf("%s \t STR_CONST\n", yytext); }
 <STRING>"\042"   		{ 
-							printf("%s \t QUOTA \n", yytext);
+							printf("%s \t QUOTA\n", yytext);
 							BEGIN INITIAL;
                 		}
 \n						{ number_of_lines(); }
@@ -133,8 +134,6 @@ void number_of_lines(){
 
 int main(int argc,char *argv[])
 {
-// {letter}	{ printf("%s letter\n", yytext); count++; }
-// .			{ printf("%s not letter\n", yytext); }
 	yyin = fopen(argv[1],"r");
 	yylex();
 	// printf("number of letter %d\n",count);
