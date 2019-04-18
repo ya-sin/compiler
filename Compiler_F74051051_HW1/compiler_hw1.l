@@ -27,7 +27,6 @@ number {digit}+
 C_PLUS_COMMENT		("//".*)
 FLOAT               ([0-9]+.[0-9]+)
 INTEGER             ([0-9]+)
-STR					(\".*\")
 
 /* Rules section */
 %%
@@ -55,7 +54,13 @@ STR					(\".*\")
 "]"						{ printf("%s \t RSB\n", yytext); }
 ";"						{ printf("%s \t SEMICOLON\n", yytext); }
 ","						{ printf("%s \t COMMA\n", yytext); }
-{STR}					{ string_handler();}
+"\042"					{ printf("%s \t QUOTA\n", yytext); BEGIN STRING; }
+<STRING>[ \t\r\a\n]+	{	}
+<STRING>(\\.|[^"\\])*    	{ printf("%s \t STR_CONST\n", yytext); }
+<STRING>"\042"   		{ 
+							printf("%s \t QUOTA\n", yytext);
+							BEGIN INITIAL;
+                		}
 \n						{ number_of_lines(); }
 
 	/* Arithmetic, Relational, and Logical Operators */
