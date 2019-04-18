@@ -55,7 +55,7 @@ INTEGER             ([0-9]+)
 ";"						{ printf("%s \t SEMICOLON\n", yytext); }
 ","						{ printf("%s \t COMMA\n", yytext); }
 "\042"					{ printf("%s \t QUOTA\n", yytext); BEGIN STRING; }
-<STRING>[ \t\r\a\n]+	{	}
+<STRING>[ \t\r\a\n]+	{}
 <STRING>(\\.|[^"\\])*   { printf("%s \t STR_CONST\n", yytext); }
 <STRING>"\042"   		{ 
 							printf("%s \t QUOTA\n", yytext);
