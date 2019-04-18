@@ -12,6 +12,7 @@
 
 	// function
 	void number_of_lines();
+	void string_handler();
 %}
 /* start condition */
 %x COMMENT
@@ -26,7 +27,7 @@ number {digit}+
 C_PLUS_COMMENT		("//".*)
 FLOAT               ([0-9]+.[0-9]+)
 INTEGER             ([0-9]+)
-
+STR					(\".*\")
 
 /* Rules section */
 %%
@@ -54,13 +55,7 @@ INTEGER             ([0-9]+)
 "]"						{ printf("%s \t RSB\n", yytext); }
 ";"						{ printf("%s \t SEMICOLON\n", yytext); }
 ","						{ printf("%s \t COMMA\n", yytext); }
-"\042"					{ printf("%s \t QUOTA\n", yytext); BEGIN STRING; }
-<STRING>[ \t\r\a\n]+	{	}
-<STRING>[^\042]*    	{ printf("%s \t STR_CONST\n", yytext); }
-<STRING>"\042"   		{ 
-							printf("%s \t QUOTA\n", yytext);
-							BEGIN INITIAL;
-                		}
+{STR}					{ string_handler();}
 \n						{ number_of_lines(); }
 
 	/* Arithmetic, Relational, and Logical Operators */
@@ -129,6 +124,14 @@ void number_of_lines(){
 		comment_newline = 0;
 	}
 	++no_of_lines;
+}
+
+void string_handler(){
+
+	printf("\" \t QUOTA\n");
+	yytext[strlen(yytext)-1]='\0';
+	printf("%s \t STR_CONST\n", yytext+=1);
+	printf("\" \t QUOTA\n");
 }
 
 int main(int argc,char *argv[])
