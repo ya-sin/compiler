@@ -136,7 +136,8 @@ id			{letter}+({letter}|{digit})*
 [\n]        { CONCAT; print_codeline(); }
 [ \t]		{ CONCAT; } /* Ignore */
 [^ \t\n] 	{ CONCAT; } /* Ignore other charactor sets */
-<<EOF>>     { CONCAT; static int once = 0; return once++ ? 0 : SEMICOLON; }
+<<EOF>>     { CONCAT; return 0; }
+
 
 %%
 
