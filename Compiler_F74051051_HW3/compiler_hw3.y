@@ -26,10 +26,14 @@ int insert_symbol(int type, char* id, int scope_level, int entry_type);
 void dump_symbol(int scope);
 void dump_all();
 void remove_symbol(int rm_scope_level);
+int get_local_var_index(char* id,int scope);
 
 /* code generation functions, just an example! */
 void gencode_function(char* codeline);
 void gencode_labelcode_function(char* codeline);
+void gencode_string_function(char* codeline);
+void gencode_right_value_function(float*);
+int get_symbol_table_index(char* id);
 
 // variable declaration
 int had_print_flag = 0;
@@ -41,6 +45,7 @@ int gencode_label_flag = 0;
 int return_goto_flag = 0;
 int while_flag = 0;
 int after_while_section_flag = 0;
+char STR_CONST_buf[64];
 
 struct data{
     char id[30];
@@ -134,8 +139,11 @@ declaration
     {
         if(lookup_symbol($2, scope_level) == -1){
             insert_symbol($1, $2, scope_level,1);
-            char tmp[16];
+            //  ++variable_declare_count;
+            // set_symbol_value($2, $4[0]);
+            // set_symbol_type($1);
             if(scope_level==0){
+                char tmp[16];
                 gencode_function(".field public static ");
                 gencode_function($2);
                 gencode_function(" ");
@@ -147,41 +155,61 @@ declaration
                         break;
                     case 2:
                         gencode_function("F = ");
+                        sprintf(tmp, "%f\n", (float)$4[0]);
+                        gencode_function(tmp);
                         break;
                     case 3:
                         gencode_function("Z = ");
+                        sprintf(tmp, "%d\n", (int)$4[0]);
+                        gencode_function(tmp);
                         break;
                     case 4:
-                        gencode_function("Ljava/lang/String; = ");
+                        gencode_function("Ljava/lang/String; = \"");
+                        gencode_function(STR_CONST_buf);
+                        gencode_function("\"\n");
                         break;
                     case 5:
                         gencode_function("V = ");
+                        sprintf(tmp, "%f\n", (float)$4[0]);
+                        gencode_function(tmp);
                         break;
                     default:
                         gencode_function("V = ");
                 }
-            } else{
+            } else if(scope_level>0){
+                char tmp[16];
+                gencode_right_value_function($4);
+                if($1 == 1 && $4[1] == 2)
+                    gencode_function("f2i\n");
+                else if($1 == 2 && $4[1] == 1)
+                    gencode_function("i2f\n");
                 switch($1) {
                     case 1:
-                        gencode_function("ldc ");
-                        sprintf(tmp, "%d\nistore 0\n", (int)$4[0]);
+                        sprintf(tmp, "istore %d\n",get_local_var_index($2,scope_level));
                         gencode_function(tmp);
                         break;
                     case 2:
-                        gencode_function("F = ");
+                        sprintf(tmp, "fstore %d\n",get_local_var_index($2,scope_level));
+                        gencode_function(tmp);
                         break;
                     case 3:
-                        gencode_function("Z = ");
+                        sprintf(tmp, "istore %d\n",get_local_var_index($2,scope_level));
+                        gencode_function(tmp);
                         break;
                     case 4:
-                        gencode_function("Ljava/lang/String; = ");
+                        sprintf(tmp, "astore %d\n", get_local_var_index($2,scope_level));
+                        gencode_function(tmp);
                         break;
                     case 5:
-                        gencode_function("V = ");
+                        sprintf(tmp, "istore %d\n", get_local_var_index($2,scope_level));
+                        gencode_function(tmp);
                         break;
                     default:
-                        gencode_function("V = ");
+                        sprintf(tmp, "istore %d\n", get_local_var_index($2,scope_level));
+                        gencode_function(tmp);
                 }
+            } else{
+                printf("error pccur in declaration");
             }
         }
     }
@@ -443,10 +471,83 @@ expression_opt
 print_func
     : PRINT LB ID RB SEMICOLON
     {
-        gencode_function("iload 0\n");
+        char tmp[16];
+        int index = get_symbol_table_index($3);
+        int scope = symbol_table[index].scope;
+        // int index = get_local_var_index($3);
+        int type;
+        if(scope == 0){
+            type = use_id_scope_get_type($3,0);
+            gencode_function("getstatic compiler_hw3/");
+            gencode_function($3);
+            switch(type) {
+                case 1:
+                    gencode_function(" I\n");
+                    break;
+                case 2:
+                    gencode_function(" F\n");
+                    break;
+                case 3:
+                    gencode_function(" Z\n");
+                    break;
+                case 4:
+                    gencode_function(" Ljava/lang/String;\n");
+                    break;
+                case 5:
+                    gencode_function(" V\n");
+                    break;
+                default:
+                    gencode_function(" V\n");
+            }
+        }
+        else{
+            int index = get_symbol_table_index($3);
+            type = use_id_scope_get_type($3,scope);
+            switch(type) {
+                case 1:
+                    gencode_function("i");
+                    break;
+                case 2:
+                    gencode_function("f");
+                    break;
+                case 3:
+                    gencode_function("i");
+                    break;
+                case 4:
+                    gencode_function("a");
+                    break;
+                case 5:
+                    gencode_function("i");
+                    break;
+                default:
+                    gencode_function("i");
+            }
+            sprintf(tmp, "load %d\n",get_local_var_index($3,symbol_table[index].scope));
+            gencode_function(tmp);
+        }
         gencode_function("getstatic java/lang/System/out Ljava/io/PrintStream;\n");
         gencode_function("swap\n");
-        gencode_function("invokevirtual java/io/PrintStream/println(I)V\n");
+        gencode_function("invokevirtual java/io/PrintStream/println(");
+        switch(type) {
+            case 1:
+                gencode_function("I");
+                break;
+            case 2:
+                gencode_function("F");
+                break;
+            case 3:
+                gencode_function("Z");
+                break;
+            case 4:
+                gencode_function("Ljava/lang/String;");
+                break;
+            case 5:
+                gencode_function("V");
+                break;
+            default:
+                gencode_function("V");
+        }
+        gencode_function(")V\n");
     }
     | PRINT LB STR_CONST RB SEMICOLON
     {
@@ -986,9 +1087,77 @@ additive_expression
 
 multiplicative_expression
     : cast_expression { $$[0] = $1[0];  $$[1] = $1[1]; }
-    | multiplicative_expression MUL unary_expression { $$[0] = $1[0]*$3[0];  $$[1] = 2; }
-    | multiplicative_expression DIV unary_expression { $$[0] = $1[0]/$3[0];  $$[1] = 2; }
-    | multiplicative_expression MOD unary_expression { $$[0] = (int)$1[0]%(int)$3[0];  $$[1] = 1; }
+    | multiplicative_expression MUL unary_expression
+    {
+        char tmp[16];
+        int tmp1 = $3[0];
+        int tmp2 = $1[0];
+        int tmp3 = $3[1];
+        int tmp4 = $1[1];
+        if(tmp1!=10){
+            gencode_function("ldc ");
+            switch(tmp3) {
+                case 1:
+                    sprintf(tmp, "%d\n", (int)$3[0]);
+                    break;
+                case 2:
+                    sprintf(tmp, "%f\n", (float)$3[0]);
+                    break;
+                case 3:
+                    sprintf(tmp, "%d\n", (int)$3[0]);
+                    break;
+                case 4:
+                    gencode_function("Ljava/lang/String;\n");
+                    break;
+                case 5:
+                    sprintf(tmp, "%f\n", (float)$3[0]);
+                    break;
+                default:
+                    sprintf(tmp, "%f\n", (float)$3[0]);
+            }
+            gencode_function(tmp);
+        }
+        if(tmp2!=10){
+            gencode_function("ldc ");
+            switch(tmp4) {
+                case 1:
+                    sprintf(tmp, "%d\n", (int)$1[0]);
+                    break;
+                case 2:
+                    sprintf(tmp, "%f\n", (float)$1[0]);
+                    break;
+                case 3:
+                    sprintf(tmp, "%d\n", (int)$1[0]);
+                    break;
+                case 4:
+                    gencode_function("Ljava/lang/String;\n");
+                    break;
+                case 5:
+                    sprintf(tmp, "%f\n", (float)$1[0]);
+                    break;
+                default:
+                    sprintf(tmp, "%f\n", (float)$1[0]);
+            }
+            gencode_function(tmp);
+        }
+        if($1[1]==2 || $3[1]==2){
+            gencode_function("fmul\n");
+        } else{
+            gencode_function("imul\n");
+        }
+        $$[0] = $1[0]*$3[0];
+        $$[1] = ($1[1]==2 || $3[1]==2)? 2:1;
+    }
+    | multiplicative_expression DIV unary_expression
+    {
+        $$[0] = $1[0]/$3[0];
+        $$[1] = 2;
+    }
+    | multiplicative_expression MOD unary_expression
+    {
+        $$[0] = (int)$1[0]%(int)$3[0];
+        $$[1] = 1;
+    }
 ;
 
 cast_expression
@@ -1011,7 +1180,7 @@ unary_operator
 
 postfix_expression
     : primary_expression { $$[0] = $1[0];  $$[1] = $1[1]; }
-    | postfix_expression LB argument_expression_list_opt RB SEMICOLON
+    | postfix_expression LB argument_expression_list_opt RB
     {
         char tmp[16];
         if((int)$3[1]==1&&(int)$3[0]!=10){
@@ -1065,7 +1234,13 @@ argument_expression_list_opt
 ;
 
 primary_expression
-    : STR_CONST { $$[0] = 100;  $$[1] = 4; }
+    : STR_CONST
+    {
+        gencode_string_function($1);
+        sprintf(STR_CONST_buf, "%s", $1);
+        $$[0] = 100;
+        $$[1] = 4;
+    }
     | ID
     {
         int found_flag = 0;
@@ -1073,6 +1248,7 @@ primary_expression
         int var_scope_level;
         int entry_type;
         int index;
+        char tmp[16];
         for(int i = scope_level;i>=0;i--){
             index = lookup_symbol($1, i);
             entry_type = symbol_table[index].entry_type;
@@ -1126,19 +1302,22 @@ primary_expression
                 $$[0] = type;// function return type
                 $$[1] = index;//id index
             }else if(entry_type==1||entry_type==2){
+                int index = get_symbol_table_index($1);
                 switch(type) {
                     case 1:
-                        gencode_function("iload 0\n");
+                        gencode_function("iload ");
                         break;
                     case 2:
-                        gencode_function("fload 0\n");
+                        gencode_function("fload ");
                         break;
                     case 3:
-                        gencode_function("bload 0\n");
+                        gencode_function("bload ");
                         break;
                     default:
-                        gencode_function("vload 0\n");
+                        gencode_function("vload ");
                 }
+                sprintf(tmp,"%d\n",get_local_var_index($1,symbol_table[index].scope));
+                gencode_function(tmp);
                 $$[0] = 10;
                 $$[1] = type;
             }
@@ -1374,6 +1553,22 @@ void dump_symbol(int scope) {
     remove_symbol(scope);
 }
 
+int get_local_var_index(char* id,int scope){
+
+    int i;
+    int j = 0;
+
+    for(i = 0;i < var_no;i++){
+        if(symbol_table[i].scope == scope&&!strcmp(symbol_table[i].id, id)){
+            return j;
+        }
+        if(symbol_table[i].scope == scope&&strcmp(symbol_table[i].id, id)){
+            j = j+1;
+        }
+    }
+    return -1;
+}
+
 void remove_symbol(int rm_scope_level){
     int i;
     int temp = 0;
@@ -1394,7 +1589,37 @@ void remove_symbol(int rm_scope_level){
     }
     var_no -= temp;
 }
-
+int get_symbol_table_index(char* id){
+    for(int j = scope_level;j>=0;j--){
+        for(int i = 0;i < var_no;i++){
+            if(!strcmp(symbol_table[i].id,id)&&symbol_table[i].scope==j)
+                return i;
+        }
+    }
+    return -1;
+}
+int use_id_scope_get_type(char* id, int scope){
+    int type,i,index;
+    for(i = 0;i < var_no;i++){
+        if(symbol_table[i].scope == scope&&!strcmp(symbol_table[i].id, id)){
+            char *type_name = symbol_table[i].type_name;
+            if(!strcmp(type_name, "int")){
+                type = 1;
+            }else if(!strcmp(type_name, "float")){
+                type = 2;
+            }else if(!strcmp(type_name, "bool")){
+                type = 3;
+            }else if(!strcmp(type_name, "string")){
+                type = 4;
+            }else if(!strcmp(type_name, "void")){
+                type = 5;
+            }else{
+                type = 6;
+            }
+        }
+    }
+    return type;
+}
 /* code generation functions */
 void gencode_function(char* codeline) {
     fprintf(file, codeline);
@@ -1403,3 +1628,25 @@ void gencode_function(char* codeline) {
 void gencode_labelcode_function(char* codeline){
     fprintf(file_label, codeline);
 }
+
+void gencode_string_function(char* codeline){
+    if(scope_level > 0){
+        gencode_function("ldc \"");
+        gencode_function(codeline);
+        gencode_function("\"\n");
+    }
+}
+
+void gencode_right_value_function(float* nonterminal){
+    gencode_function("ldc ");
+    char tmp[16];
+    if(nonterminal[1] == 1 || nonterminal[1] == 3 || nonterminal[1] == 4){
+        sprintf(tmp, "%d\n", (int)nonterminal[0]);
+        gencode_function(tmp);
+    }
+    else if(nonterminal[1] == 2){
+        sprintf(tmp, "%f\n", (float)nonterminal[0]);
+        gencode_function(tmp);
+    }
+}
+
