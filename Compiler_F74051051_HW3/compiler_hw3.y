@@ -27,13 +27,15 @@ void dump_symbol(int scope);
 void dump_all();
 void remove_symbol(int rm_scope_level);
 int get_local_var_index(char* id,int scope);
+int use_id_scope_get_type(char* id, int scope);
+int get_symbol_table_index(char* id);
 
 /* code generation functions, just an example! */
 void gencode_function(char* codeline);
 void gencode_labelcode_function(char* codeline);
 void gencode_string_function(char* codeline);
 void gencode_right_value_function(float*);
-int get_symbol_table_index(char* id);
+void gencode_ADD_SUB_MUL_DIV_MOD_function(float*,float*);
 
 // variable declaration
 int had_print_flag = 0;
@@ -68,7 +70,8 @@ struct data{
     int i_val;
     double f_val;
     char* string;
-    float exp_ret[2];
+    float exp_ret[3];
+    // 1:value 2:type 3:ID const other
 }
 /* Token without return */
 %token PRINT COMMENT
@@ -321,6 +324,7 @@ function_declaration
             tmp = insert_symbol($1, $2, scope_level,0);
             $$[0] = $1;//type
             $$[1] = tmp;//ID symbol table index
+            $$[2] = 0;
             function_return_type = 1;
             gencode_function(".method public static ");
             gencode_function($2);
@@ -386,7 +390,12 @@ parameter
 ;
 
 initializer
-    : assignment_expression { $$[0] = $1[0];  $$[1] = $1[1]; }
+    : assignment_expression
+    {
+        $$[0] = $1[0];
+        $$[1] = $1[1];
+        $$[2] = $1[2];
+    }
 ;
 
 compound_statement
@@ -605,8 +614,18 @@ if_block
 ;
 
 expression
-    : assignment_expression { $$[0] = $1[0];  $$[1] = $1[1]; }
-    | expression COMMA assignment_expression { $$[0] = $1[0];  $$[1] = $1[1]; }
+    : assignment_expression
+    {
+        $$[0] = $1[0];
+        $$[1] = $1[1];
+        $$[2] = $1[2];
+    }
+    | expression COMMA assignment_expression
+    {
+        $$[0] = $1[0];
+        $$[1] = $1[1];
+        $$[2] = $1[2];
+    }
 ;
 
 argument_expression_list
@@ -656,12 +675,18 @@ ID_assignment_expression
                 break;
             }
         }
-        $$[0] = 20;
+        $$[0] = -1;
         $$[1] = type;
+        $$[2] = 0;
     }
 ;
 assignment_expression
-    : conditional_expression { $$[0] = $1[0];  $$[1] = $1[1]; }
+    : conditional_expression
+    {
+        $$[0] = $1[0];
+        $$[1] = $1[1];
+        $$[2] = $1[2];
+    }
     | ID_assignment_expression assignment_operator assignment_expression
     {
         char tmp[16];
@@ -721,6 +746,7 @@ assignment_expression
 
         $$[0] = $1[0];
         $$[1] = $1[1];
+        $$[2] = $1[2];
     }
 ;
 
@@ -737,76 +763,56 @@ assignment_operator
 ;
 
 conditional_expression
-    : logical_OR_expression { $$[0] = $1[0];  $$[1] = $1[1]; }
+    : logical_OR_expression
+    {
+        $$[0] = $1[0];
+        $$[1] = $1[1];
+        $$[2] = $1[2];
+    }
 ;
 
 logical_OR_expression
-    : logical_AND_expression { $$[0] = $1[0];  $$[1] = $1[1]; }
-    | logical_OR_expression OR logical_AND_expression { $$[0] = $1[0];  $$[1] = $1[1]; }
+    : logical_AND_expression
+    {
+        $$[0] = $1[0];
+        $$[1] = $1[1];
+        $$[2] = $1[2];
+    }
+    | logical_OR_expression OR logical_AND_expression
+    {
+        $$[0] = $1[0];
+        $$[1] = $1[1];
+        $$[2] = $1[2];
+    }
 ;
 
 logical_AND_expression
-    : equality_expression { $$[0] = $1[0];  $$[1] = $1[1]; }
-    | logical_AND_expression AND equality_expression { $$[0] = $1[0];  $$[1] = $1[1]; }
+    : equality_expression
+    {
+        $$[0] = $1[0];
+        $$[1] = $1[1];
+        $$[2] = $1[2];
+    }
+    | logical_AND_expression AND equality_expression
+    {
+        $$[0] = $1[0];
+        $$[1] = $1[1];
+        $$[2] = $1[2];
+    }
 ;
 
 equality_expression
-    : relational_expression { $$[0] = $1[0];  $$[1] = $1[1]; }
+    : relational_expression
+    {
+        $$[0] = $1[0];
+        $$[1] = $1[1];
+        $$[2] = $1[2];
+    }
     | equality_expression EQ relational_expression
     {
         // gencode_function("isub\n");
         // gencode_function("ifeq LABEL_EQ");
-        char tmp[16];
-        int tmp1 = $3[0];
-        int tmp2 = $1[0];
-        int tmp3 = $3[1];
-        int tmp4 = $1[1];
-        if(tmp1!=10){
-            gencode_function("ldc ");
-            switch(tmp3) {
-                case 1:
-                    sprintf(tmp, "%d\n", (int)$3[0]);
-                    break;
-                case 2:
-                    sprintf(tmp, "%f\n", (float)$3[0]);
-                    break;
-                case 3:
-                    sprintf(tmp, "%d\n", (int)$3[0]);
-                    break;
-                case 4:
-                    gencode_function("Ljava/lang/String;\n");
-                    break;
-                case 5:
-                    sprintf(tmp, "%f\n", (float)$3[0]);
-                    break;
-                default:
-                    sprintf(tmp, "%f\n", (float)$3[0]);
-            }
-            gencode_function(tmp);
-        }
-        if(tmp2!=10){
-            gencode_function("ldc ");
-            switch(tmp4) {
-                case 1:
-                    sprintf(tmp, "%d\n", (int)$1[0]);
-                    break;
-                case 2:
-                    sprintf(tmp, "%f\n", (float)$1[0]);
-                    break;
-                case 3:
-                    sprintf(tmp, "%d\n", (int)$1[0]);
-                    break;
-                case 4:
-                    gencode_function("Ljava/lang/String;\n");
-                    break;
-                case 5:
-                    sprintf(tmp, "%f\n", (float)$1[0]);
-                    break;
-                default:
-                    sprintf(tmp, "%f\n", (float)$1[0]);
-            }
-            gencode_function(tmp);
-        }
+        gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
         if($1[1]==2 || $3[1]==2){
             gencode_function("fsub\n");
         } else{
@@ -819,80 +825,44 @@ equality_expression
         if($1[0]==$3[0]){
             $$[0] = 1;
             $$[1] = 3;
+            $$[2] = 1;
         } else{
             $$[0] = 0;
             $$[1] = 3;
+            $$[2] = 1;
         }
 
     }
     | equality_expression NE relational_expression
     {
+        gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
+        if($1[1]==2 || $3[1]==2){
+            gencode_function("fsub\n");
+        } else{
+            gencode_function("isub\n");
+        }
+        gencode_function("ifne LABEL_EQ\n");
+        gencode_label_flag = 1;
+        return_goto_flag = 1;
+        gencode_labelcode_function("LABEL_EQ:\n");
         if($1[0]!=$3[0]){
             $$[0] = 1;
             $$[1] = 3;
+            $$[2] = 1;
         } else{
             $$[0] = 0;
             $$[1] = 3;
+            $$[2] = 1;
         }
 
     }
 ;
 
 relational_expression
-    : additive_expression { $$[0] = $1[0];  $$[1] = $1[1]; }
+    : additive_expression { $$[0] = $1[0];  $$[1] = $1[1]; $$[2] = $1[2];}
     | relational_expression MT additive_expression
     {
-        char tmp[16];
-        int tmp1 = $3[0];
-        int tmp2 = $1[0];
-        int tmp3 = $3[1];
-        int tmp4 = $1[1];
-        if(tmp1!=10){
-            gencode_function("ldc ");
-            switch(tmp3) {
-                case 1:
-                    sprintf(tmp, "%d\n", (int)$3[0]);
-                    break;
-                case 2:
-                    sprintf(tmp, "%f\n", (float)$3[0]);
-                    break;
-                case 3:
-                    sprintf(tmp, "%d\n", (int)$3[0]);
-                    break;
-                case 4:
-                    gencode_function("Ljava/lang/String;\n");
-                    break;
-                case 5:
-                    sprintf(tmp, "%f\n", (float)$3[0]);
-                    break;
-                default:
-                    sprintf(tmp, "%f\n", (float)$3[0]);
-            }
-            gencode_function(tmp);
-        }
-        if(tmp2!=10){
-            gencode_function("ldc ");
-            switch(tmp4) {
-                case 1:
-                    sprintf(tmp, "%d\n", (int)$1[0]);
-                    break;
-                case 2:
-                    sprintf(tmp, "%f\n", (float)$1[0]);
-                    break;
-                case 3:
-                    sprintf(tmp, "%d\n", (int)$1[0]);
-                    break;
-                case 4:
-                    gencode_function("Ljava/lang/String;\n");
-                    break;
-                case 5:
-                    sprintf(tmp, "%f\n", (float)$1[0]);
-                    break;
-                default:
-                    sprintf(tmp, "%f\n", (float)$1[0]);
-            }
-            gencode_function(tmp);
-        }
+        gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
         if($1[1]==2 || $3[1]==2){
             gencode_function("fsub\n");
         } else{
@@ -911,65 +881,17 @@ relational_expression
         if($1[0]>$3[0]){
             $$[0] = 1;
             $$[1] = 3;
+            $$[2] = 1;
         } else{
             $$[0] = 0;
             $$[1] = 3;
+            $$[2] = 1;
         }
 
     }
     | relational_expression LT additive_expression
     {
-        char tmp[16];
-        int tmp1 = $3[0];
-        int tmp2 = $1[0];
-        int tmp3 = $3[1];
-        int tmp4 = $1[1];
-        if(tmp1!=10){
-            gencode_function("ldc ");
-            switch(tmp3) {
-                case 1:
-                    sprintf(tmp, "%d\n", (int)$3[0]);
-                    break;
-                case 2:
-                    sprintf(tmp, "%f\n", (float)$3[0]);
-                    break;
-                case 3:
-                    sprintf(tmp, "%d\n", (int)$3[0]);
-                    break;
-                case 4:
-                    gencode_function("Ljava/lang/String;\n");
-                    break;
-                case 5:
-                    sprintf(tmp, "%f\n", (float)$3[0]);
-                    break;
-                default:
-                    sprintf(tmp, "%f\n", (float)$3[0]);
-            }
-            gencode_function(tmp);
-        }
-        if(tmp2!=10){
-            gencode_function("ldc ");
-            switch(tmp4) {
-                case 1:
-                    sprintf(tmp, "%d\n", (int)$1[0]);
-                    break;
-                case 2:
-                    sprintf(tmp, "%f\n", (float)$1[0]);
-                    break;
-                case 3:
-                    sprintf(tmp, "%d\n", (int)$1[0]);
-                    break;
-                case 4:
-                    gencode_function("Ljava/lang/String;\n");
-                    break;
-                case 5:
-                    sprintf(tmp, "%f\n", (float)$1[0]);
-                    break;
-                default:
-                    sprintf(tmp, "%f\n", (float)$1[0]);
-            }
-            gencode_function(tmp);
-        }
+        gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
         if($1[1]==2 || $3[1]==2){
             gencode_function("fsub\n");
         } else{
@@ -987,91 +909,82 @@ relational_expression
         if($1[0]<$3[0]){
             $$[0] = 1;
             $$[1] = 3;
+            $$[2] = 1;
         } else{
             $$[0] = 0;
             $$[1] = 3;
+            $$[2] = 1;
         }
 
     }
     | relational_expression MTE additive_expression
     {
+        gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
+        if($1[1]==2 || $3[1]==2){
+            gencode_function("fsub\n");
+        } else{
+            gencode_function("isub\n");
+        }
+        if(while_flag){
+            gencode_function("ifge LABEL_TRUE\n");
+            gencode_function("goto LABEL_FALSE\n");
+        } else{
+            gencode_function("ifge LABEL_MTE\n");
+            gencode_label_flag = 1;
+            return_goto_flag = 1;
+            gencode_labelcode_function("LABEL_MTE:\n");
+        }
         if($1[0]>=$3[0]){
             $$[0] = 1;
             $$[1] = 3;
+            $$[2] = 1;
         } else{
             $$[0] = 0;
             $$[1] = 3;
+            $$[2] = 1;
         }
 
     }
     | relational_expression LTE additive_expression
     {
+        gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
+        if($1[1]==2 || $3[1]==2){
+            gencode_function("fsub\n");
+        } else{
+            gencode_function("isub\n");
+        }
+        if(while_flag){
+            gencode_function("ifle LABEL_TRUE\n");
+            gencode_function("goto LABEL_FALSE\n");
+        } else{
+            gencode_function("ifle LABEL_LTE\n");
+            gencode_label_flag = 1;
+            return_goto_flag = 1;
+            gencode_labelcode_function("LABEL_LTE:\n");
+        }
         if($1[0]<=$3[0]){
             $$[0] = 1;
             $$[1] = 3;
+            $$[2] = 1;
         } else{
             $$[0] = 0;
             $$[1] = 3;
+            $$[2] = 1;
         }
 
     }
 ;
 
 additive_expression
-    : multiplicative_expression { $$[0] = $1[0];  $$[1] = $1[1]; }
+    : multiplicative_expression
+    {
+        $$[0] = $1[0];
+        $$[1] = $1[1];
+        $$[2] = $1[2];
+    }
     | additive_expression ADD multiplicative_expression
     {
-        char tmp[16];
-        int tmp1 = $3[0];
-        int tmp2 = $1[0];
-        int tmp3 = $3[1];
-        int tmp4 = $1[1];
-        if(tmp1!=10){
-            gencode_function("ldc ");
-            switch(tmp3) {
-                case 1:
-                    sprintf(tmp, "%d\n", (int)$3[0]);
-                    break;
-                case 2:
-                    sprintf(tmp, "%f\n", (float)$3[0]);
-                    break;
-                case 3:
-                    sprintf(tmp, "%d\n", (int)$3[0]);
-                    break;
-                case 4:
-                    gencode_function("Ljava/lang/String;\n");
-                    break;
-                case 5:
-                    sprintf(tmp, "%f\n", (float)$3[0]);
-                    break;
-                default:
-                    sprintf(tmp, "%f\n", (float)$3[0]);
-            }
-            gencode_function(tmp);
-        }
-        if(tmp2!=10){
-            gencode_function("ldc ");
-            switch(tmp4) {
-                case 1:
-                    sprintf(tmp, "%d\n", (int)$1[0]);
-                    break;
-                case 2:
-                    sprintf(tmp, "%f\n", (float)$1[0]);
-                    break;
-                case 3:
-                    sprintf(tmp, "%d\n", (int)$1[0]);
-                    break;
-                case 4:
-                    gencode_function("Ljava/lang/String;\n");
-                    break;
-                case 5:
-                    sprintf(tmp, "%f\n", (float)$1[0]);
-                    break;
-                default:
-                    sprintf(tmp, "%f\n", (float)$1[0]);
-            }
-            gencode_function(tmp);
-        }
+        gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
         if($1[1]==2 || $3[1]==2){
             gencode_function("fadd\n");
         } else{
@@ -1079,97 +992,87 @@ additive_expression
         }
 
         $$[0] = $1[0]+$3[0];
-        $$[1] = 2;
+        $$[1] = ($1[1]==2 || $3[1]==2)? 2:1;;
+        $$[2] = 2;
 
     }
-    | additive_expression SUB multiplicative_expression { $$[0] = $1[0]-$3[0];  $$[1] = 2; }
+    | additive_expression SUB multiplicative_expression
+    {
+
+        gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
+        if($1[1]==2 || $3[1]==2){
+            gencode_function("fsub\n");
+        } else{
+            gencode_function("isub\n");
+        }
+
+        $$[0] = $1[0]-$3[0];
+        $$[1] = ($1[1]==2 || $3[1]==2)? 2:1;;
+        $$[2] = 2;
+    }
 ;
 
 multiplicative_expression
-    : cast_expression { $$[0] = $1[0];  $$[1] = $1[1]; }
+    : cast_expression
+    {
+        $$[0] = $1[0];
+        $$[1] = $1[1];
+        $$[2] = $1[2];
+    }
     | multiplicative_expression MUL unary_expression
     {
-        char tmp[16];
-        int tmp1 = $3[0];
-        int tmp2 = $1[0];
-        int tmp3 = $3[1];
-        int tmp4 = $1[1];
-        if(tmp1!=10){
-            gencode_function("ldc ");
-            switch(tmp3) {
-                case 1:
-                    sprintf(tmp, "%d\n", (int)$3[0]);
-                    break;
-                case 2:
-                    sprintf(tmp, "%f\n", (float)$3[0]);
-                    break;
-                case 3:
-                    sprintf(tmp, "%d\n", (int)$3[0]);
-                    break;
-                case 4:
-                    gencode_function("Ljava/lang/String;\n");
-                    break;
-                case 5:
-                    sprintf(tmp, "%f\n", (float)$3[0]);
-                    break;
-                default:
-                    sprintf(tmp, "%f\n", (float)$3[0]);
-            }
-            gencode_function(tmp);
-        }
-        if(tmp2!=10){
-            gencode_function("ldc ");
-            switch(tmp4) {
-                case 1:
-                    sprintf(tmp, "%d\n", (int)$1[0]);
-                    break;
-                case 2:
-                    sprintf(tmp, "%f\n", (float)$1[0]);
-                    break;
-                case 3:
-                    sprintf(tmp, "%d\n", (int)$1[0]);
-                    break;
-                case 4:
-                    gencode_function("Ljava/lang/String;\n");
-                    break;
-                case 5:
-                    sprintf(tmp, "%f\n", (float)$1[0]);
-                    break;
-                default:
-                    sprintf(tmp, "%f\n", (float)$1[0]);
-            }
-            gencode_function(tmp);
-        }
+
+        gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
         if($1[1]==2 || $3[1]==2){
             gencode_function("fmul\n");
         } else{
             gencode_function("imul\n");
         }
+
         $$[0] = $1[0]*$3[0];
         $$[1] = ($1[1]==2 || $3[1]==2)? 2:1;
+        $$[2] = 2;
     }
     | multiplicative_expression DIV unary_expression
     {
+
+        gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
+        if($1[1]==2 || $3[1]==2){
+            gencode_function("fdiv\n");
+        } else{
+            gencode_function("idiv\n");
+        }
+
         $$[0] = $1[0]/$3[0];
         $$[1] = 2;
+        $$[2] = 2;
     }
     | multiplicative_expression MOD unary_expression
     {
+
+        gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
+        if($1[1]==2 || $3[1]==2){
+            gencode_function("frem\n");
+        } else{
+            gencode_function("irem\n");
+        }
+
         $$[0] = (int)$1[0]%(int)$3[0];
         $$[1] = 1;
+        $$[2] = 2;
     }
 ;
 
 cast_expression
-    : unary_expression { $$[0] = $1[0];  $$[1] = $1[1]; }
-    | LB type RB cast_expression { $$[0] = $4[0];  $$[1] = $2; }
+    : unary_expression { $$[0] = $1[0];  $$[1] = $1[1]; $$[2] = $1[2];}
+    | LB type RB cast_expression { $$[0] = $4[0];  $$[1] = $2; $$[2] = 2;}
 ;
 
 unary_expression
-    : postfix_expression { $$[0] = $1[0];  $$[1] = $1[1]; }
-    | INC unary_expression { $$[0] = $2[0]+1;  $$[1] = $2[1]; }
-    | DEC unary_expression { $$[0] = $2[0]-1;  $$[1] = $2[1]; }
-    | unary_operator cast_expression { $$[0] = $2[0]*$1;  $$[1] = $2[1]; }
+    : postfix_expression { $$[0] = $1[0];  $$[1] = $1[1]; $$[2] = $1[2];}
+    | INC unary_expression { $$[0] = $2[0]+1;  $$[1] = $2[1]; $$[2] = $2[2];}
+    | DEC unary_expression { $$[0] = $2[0]-1;  $$[1] = $2[1]; $$[2] = $2[2];}
+    | unary_operator cast_expression { $$[0] = $2[0]*$1;  $$[1] = $2[1]; $$[2] = $2[2];}
 ;
 
 unary_operator
@@ -1179,7 +1082,7 @@ unary_operator
 ;
 
 postfix_expression
-    : primary_expression { $$[0] = $1[0];  $$[1] = $1[1]; }
+    : primary_expression { $$[0] = $1[0];  $$[1] = $1[1]; $$[2] = $1[2];}
     | postfix_expression LB argument_expression_list_opt RB
     {
         char tmp[16];
@@ -1213,6 +1116,9 @@ postfix_expression
             default:
                 gencode_function("V\n");
         }
+        $$[0] = -1;
+        $$[1] = (int)$1[0];
+        $$[2] = 4;
 
         // printf("id = %s\n",symbol_table[(int)$1[1]].id);
         // printf("type= %d\n",(int)$1[0]);
@@ -1230,6 +1136,7 @@ argument_expression_list_opt
     {
         $$[0] = 2000;
         $$[1] = 2000;
+        $$[2] = 3000;
     }
 ;
 
@@ -1238,8 +1145,9 @@ primary_expression
     {
         gencode_string_function($1);
         sprintf(STR_CONST_buf, "%s", $1);
-        $$[0] = 100;
+        $$[0] = -1;
         $$[1] = 4;
+        $$[2] = 3;
     }
     | ID
     {
@@ -1326,10 +1234,21 @@ primary_expression
              $$[0] = 10;
              $$[1] = type;
         }
+        $$[2] = 0;
 
     }
-    | const  { $$[0] = $1[0];  $$[1] = $1[1]; }
-    | LB expression RB { $$[0] = $2[0];  $$[1] = $2[1]; }
+    | const
+    {
+        $$[0] = $1[0];
+        $$[1] = $1[1];
+        $$[2] = $1[2];
+    }
+    | LB expression RB
+    {
+        $$[0] = $2[0];
+        $$[1] = $2[1];
+        $$[2] = $2[2];
+    }
 ;
 
 const
@@ -1341,10 +1260,25 @@ const
         // gencode_function(tmp);
         $$[0] = $1;
         $$[1] = 1;
+        $$[2] = 1;
     }
-    | F_CONST { $$[0] = $1; $$[1] = 2; }
-    | TRUE { $$[0] = 1; $$[1] = 3; }
-    | FALSE { $$[0] = 0; $$[1] = 3; }
+    | F_CONST{
+        $$[0] = $1;
+        $$[1] = 2;
+        $$[2] = 1;
+    }
+    | TRUE
+    {
+        $$[0] = 1;
+        $$[1] = 3;
+        $$[2] = 1;
+    }
+    | FALSE
+    {
+        $$[0] = 0;
+        $$[1] = 3;
+        $$[2] = 1;
+    }
 ;
 
 lcb
@@ -1638,14 +1572,71 @@ void gencode_string_function(char* codeline){
 }
 
 void gencode_right_value_function(float* nonterminal){
-    gencode_function("ldc ");
+    if(nonterminal[2]==1){
+        gencode_function("ldc ");
+        char tmp[16];
+        if(nonterminal[1] == 1 || nonterminal[1] == 3 || nonterminal[1] == 4){
+            sprintf(tmp, "%d\n", (int)nonterminal[0]);
+            gencode_function(tmp);
+        }
+        else if(nonterminal[1] == 2){
+            sprintf(tmp, "%f\n", (float)nonterminal[0]);
+            gencode_function(tmp);
+        }
+    }
+}
+
+void gencode_ADD_SUB_MUL_DIV_MOD_function(float* var1, float* var2){
+
     char tmp[16];
-    if(nonterminal[1] == 1 || nonterminal[1] == 3 || nonterminal[1] == 4){
-        sprintf(tmp, "%d\n", (int)nonterminal[0]);
+    int tmp1 = var2[2];
+    int tmp2 = var1[2];
+    int tmp3 = var2[1];
+    int tmp4 = var1[1];
+    if(tmp1==1){
+        gencode_function("ldc ");
+        switch(tmp3) {
+            case 1:
+                sprintf(tmp, "%d\n", (int)var2[0]);
+                break;
+            case 2:
+                sprintf(tmp, "%f\n", (float)var2[0]);
+                break;
+            case 3:
+                sprintf(tmp, "%d\n", (int)var2[0]);
+                break;
+            case 4:
+                gencode_function("Ljava/lang/String;\n");
+                break;
+            case 5:
+                sprintf(tmp, "%f\n", (float)var2[0]);
+                break;
+            default:
+                sprintf(tmp, "%f\n", (float)var2[0]);
+        }
         gencode_function(tmp);
     }
-    else if(nonterminal[1] == 2){
-        sprintf(tmp, "%f\n", (float)nonterminal[0]);
+    if(tmp2==1){
+        gencode_function("ldc ");
+        switch(tmp4) {
+            case 1:
+                sprintf(tmp, "%d\n", (int)var1[0]);
+                break;
+            case 2:
+                sprintf(tmp, "%f\n", (float)var1[0]);
+                break;
+            case 3:
+                sprintf(tmp, "%d\n", (int)var1[0]);
+                break;
+            case 4:
+                gencode_function("Ljava/lang/String;\n");
+                break;
+            case 5:
+                sprintf(tmp, "%f\n", (float)var1[0]);
+                break;
+            default:
+                sprintf(tmp, "%f\n", (float)var1[0]);
+        }
         gencode_function(tmp);
     }
 }
