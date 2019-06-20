@@ -17,6 +17,8 @@ FILE *file; // To generate .j file for Jasmin
 FILE *file_label; // To generate .j file for label
 
 void yyerror(char *s);
+void print_error(char* msg, char* Name);
+void print_error_after_line();
 
 /* symbol table functions */
 int lookup_symbol(char* id, int scope);
@@ -38,7 +40,7 @@ void gencode_right_value_function(float*);
 void gencode_ADD_SUB_MUL_DIV_MOD_function(float*,float*);
 
 // variable declaration
-int had_print_flag = 0;
+
 int dump_flag = -1;
 int var_no;
 int scope_level;
@@ -48,6 +50,13 @@ int return_goto_flag = 0;
 int while_flag = 0;
 int after_while_section_flag = 0;
 char STR_CONST_buf[64];
+int label_count = 0;
+
+char error_buf[256];
+int print_error_flag = 0;
+int syntax_error_flag = 0;
+int had_print_flag = 0;
+int file_delete_flag = 0;
 
 struct data{
     char id[30];
@@ -245,26 +254,24 @@ declaration
                         gencode_function("V\n");
                 }
             }else{
+                char tmp[16];
                 switch($1) {
                     case 1:
-                        gencode_function("ldc 0\nistore 0\n");
+                        gencode_function("ldc 0\n");
+                        sprintf(tmp, "istore %d\n",get_local_var_index($2,scope_level));
+                        gencode_function(tmp);
                         // sprintf(tmp, "%d\nistore 0", (int)$4[0]);
                         // gencode_function(tmp);
                         break;
                     case 2:
-                        gencode_function("F = ");
-                        break;
-                    case 3:
-                        gencode_function("Z = ");
-                        break;
-                    case 4:
-                        gencode_function("Ljava/lang/String; = ");
-                        break;
-                    case 5:
-                        gencode_function("V = ");
+                        gencode_function("ldc 0.0\n");
+                        sprintf(tmp, "fstore %d\n",get_local_var_index($2,scope_level));
+                        gencode_function(tmp);
                         break;
                     default:
-                        gencode_function("V = ");
+                        gencode_function("ldc 0.0\n");
+                        sprintf(tmp, "fstore %d\n",get_local_var_index($2,scope_level));
+                        gencode_function(tmp);
                 }
             }
         }
@@ -325,7 +332,25 @@ function_declaration
             $$[0] = $1;//type
             $$[1] = tmp;//ID symbol table index
             $$[2] = 0;
-            function_return_type = 1;
+            switch($1) {
+                case 1:
+                    function_return_type = 1;
+                    break;
+                case 2:
+                    function_return_type = 2;
+                    break;
+                case 3:
+                    function_return_type = 3;
+                    break;
+                case 4:
+                    function_return_type = 4;
+                    break;
+                case 5:
+                    function_return_type = 5;
+                    break;
+                default:
+                    function_return_type = 1;
+            }
             gencode_function(".method public static ");
             gencode_function($2);
             gencode_function("(");
@@ -420,6 +445,9 @@ block_item
 statement
     : compound_statement
     | if_block
+    {
+
+    }
     | expression_statement
     | iteration_block
     | jump_block
@@ -433,14 +461,14 @@ jump_block
     {
         if(function_return_type == 1)
             gencode_function("ireturn\n");
-        else
+        else if(function_return_type==2)
             gencode_function("freturn\n");
     }
     | RET SEMICOLON
     {
         if(return_goto_flag&&!after_while_section_flag){
-            gencode_function("goto EXIT_0\n");
-            gencode_labelcode_function("EXIT_0:\n");
+            // gencode_function("goto EXIT_0\n");
+            // gencode_labelcode_function("EXIT_0:\n");
             gencode_labelcode_function("return\n");
             // gencode_function("EXIT_0:\nreturn\n");
         } else if(after_while_section_flag){
@@ -545,7 +573,7 @@ print_func
                 gencode_function("F");
                 break;
             case 3:
-                gencode_function("Z");
+                gencode_function("I");
                 break;
             case 4:
                 gencode_function("Ljava/lang/String;");
@@ -599,18 +627,39 @@ print_func
         gencode_function(tmp);
         gencode_function("getstatic java/lang/System/out Ljava/io/PrintStream;\n");
         gencode_function("swap\n");
-        gencode_function("invokevirtual java/io/PrintStream/println(I)V\n");
+        if(type==1)
+            gencode_function("invokevirtual java/io/PrintStream/println(I)V\n");
+        if(type==2)
+            gencode_function("invokevirtual java/io/PrintStream/println(F)V\n");
+        if(type==3)
+            gencode_function("invokevirtual java/io/PrintStream/println(I)V\n");
     }
 ;
 
-if_block
-    : IF LB expression RB statement
+ELSE_IF_statement
+    : ELSE IF LB expression RB compound_statement ELSE_IF_statement
     {
-        // %prec LOWER_THAN_ELSE ;
-        // if($3[0])
-
+        // printf("B\n");
     }
-    | IF LB expression RB statement ELSE statement
+    | ELSE compound_statement
+    {
+        // printf("A\n");
+        gencode_function("goto EXIT_0\n");
+        gencode_labelcode_function("EXIT_0:\n");
+    }
+    ;
+
+if_block
+    : IF LB expression RB compound_statement
+    {
+        gencode_function("goto EXIT_0\n");
+        gencode_labelcode_function("EXIT_0:\n");
+        // printf("D\n");
+    }
+    | IF LB expression RB compound_statement ELSE_IF_statement
+    {
+        // printf("C\n");
+    }
 ;
 
 expression
@@ -647,37 +696,41 @@ argument_expression_list
 ID_assignment_expression
     : ID
     {
-        int type;
-        int entry_type;
-        int index;
-        for(int i = scope_level;i>=0;i--){
-            index = lookup_symbol($1, i);
-            entry_type = symbol_table[index].entry_type;
-            if( index != -1){
-                char *type_name = symbol_table[index].type_name;
-                // printf("id= %s\n",symbol_table[index].id);
-                // printf("type_name= %s\n",type_name);
-                // printf("Scope= %d\n",var_scope_level);
-                // printf("entry type= %d\n",entry_type);
-                if(!strcmp(type_name, "int")){
-                    type = 1;
-                }else if(!strcmp(type_name, "float")){
-                    type = 2;
-                }else if(!strcmp(type_name, "bool")){
-                    type = 3;
-                }else if(!strcmp(type_name, "string")){
-                    type = 4;
-                }else if(!strcmp(type_name, "void")){
-                    type = 5;
-                }else{
-                    type = 6;
+        if(lookup_symbol($1,scope_level) == -1)
+            print_error("Undeclared variable ", $1);
+        else{
+            int type;
+            // int entry_type;
+            int index;
+            for(int i = scope_level;i>=0;i--){
+                index = lookup_symbol($1, i);
+                // entry_type = symbol_table[index].entry_type;
+                if( index != -1){
+                    char *type_name = symbol_table[index].type_name;
+                    // printf("id= %s\n",symbol_table[index].id);
+                    // printf("type_name= %s\n",type_name);
+                    // printf("Scope= %d\n",var_scope_level);
+                    // printf("entry type= %d\n",entry_type);
+                    if(!strcmp(type_name, "int")){
+                        type = 1;
+                    }else if(!strcmp(type_name, "float")){
+                        type = 2;
+                    }else if(!strcmp(type_name, "bool")){
+                        type = 3;
+                    }else if(!strcmp(type_name, "string")){
+                        type = 4;
+                    }else if(!strcmp(type_name, "void")){
+                        type = 5;
+                    }else{
+                        type = 6;
+                    }
+                    break;
                 }
-                break;
             }
+            $$[0] = -1;
+            $$[1] = type;
+            $$[2] = get_local_var_index($1,scope_level);;//var_index
         }
-        $$[0] = -1;
-        $$[1] = type;
-        $$[2] = 0;
     }
 ;
 assignment_expression
@@ -692,10 +745,35 @@ assignment_expression
         char tmp[16];
         int tmp3 = $3[1];
         if($2==0){
-            gencode_function("istore 0\n");
-        }
-        else{
-            gencode_function("iload 0\n");
+            gencode_function("istore ");
+            sprintf(tmp,"%d\n",(int)$1[2]);
+            gencode_function(tmp);
+        } else if($2==4&&$3[0]==0){
+            print_error("divide by zero", "");
+        } else if($2==5&&((int)$1[1] != 1 || $3[1] != 1)){
+            print_error("% with floating point operands", "");
+        } else{
+            switch((int)$1[1]) {
+                case 1:
+                    gencode_function("i");
+                    break;
+                case 2:
+                    gencode_function("f");
+                    break;
+                case 3:
+                    gencode_function("i");
+                    break;
+                case 4:
+                    gencode_function("a");
+                    break;
+                case 5:
+                    gencode_function("i");
+                    break;
+                default:
+                    gencode_function("i");
+            }
+            sprintf(tmp, "load %d\n",(int)$1[2]);
+            gencode_function(tmp);
             gencode_function("ldc ");
             switch(tmp3) {
                 case 1:
@@ -741,7 +819,9 @@ assignment_expression
                     printf("dont know += -= ....");
             }
             gencode_function("\n");
-            gencode_function("istore 0\n");
+            gencode_function("istore ");
+            sprintf(tmp,"%d\n",(int)$1[2]);
+            gencode_function(tmp);
         }
 
         $$[0] = $1[0];
@@ -811,17 +891,21 @@ equality_expression
     | equality_expression EQ relational_expression
     {
         // gencode_function("isub\n");
-        // gencode_function("ifeq LABEL_EQ");
+        char tmp[16];
         gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
         if($1[1]==2 || $3[1]==2){
             gencode_function("fsub\n");
+            gencode_function("f2i\n");
         } else{
             gencode_function("isub\n");
         }
-        gencode_function("ifeq LABEL_EQ\n");
+        label_count++;
+        sprintf(tmp,"ifeq LABEL_EQ%d\n",label_count);
+        gencode_function(tmp);
         gencode_label_flag = 1;
         return_goto_flag = 1;
-        gencode_labelcode_function("LABEL_EQ:\n");
+        sprintf(tmp,"LABEL_EQ%d:\n",label_count);
+        gencode_function(tmp);
         if($1[0]==$3[0]){
             $$[0] = 1;
             $$[1] = 3;
@@ -835,16 +919,21 @@ equality_expression
     }
     | equality_expression NE relational_expression
     {
+        char tmp[16];
         gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
         if($1[1]==2 || $3[1]==2){
             gencode_function("fsub\n");
+            gencode_function("f2i\n");
         } else{
             gencode_function("isub\n");
         }
-        gencode_function("ifne LABEL_EQ\n");
+        label_count++;
+        sprintf(tmp,"ifeq LABEL_NE%d\n",label_count);
+        gencode_function(tmp);
         gencode_label_flag = 1;
         return_goto_flag = 1;
-        gencode_labelcode_function("LABEL_EQ:\n");
+        sprintf(tmp,"LABEL_NE%d:\n",label_count);
+        gencode_function(tmp);
         if($1[0]!=$3[0]){
             $$[0] = 1;
             $$[1] = 3;
@@ -862,9 +951,11 @@ relational_expression
     : additive_expression { $$[0] = $1[0];  $$[1] = $1[1]; $$[2] = $1[2];}
     | relational_expression MT additive_expression
     {
+        char tmp[16];
         gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
         if($1[1]==2 || $3[1]==2){
             gencode_function("fsub\n");
+            gencode_function("f2i\n");
         } else{
             gencode_function("isub\n");
         }
@@ -872,6 +963,7 @@ relational_expression
             gencode_function("ifgt LABEL_TRUE\n");
             gencode_function("goto LABEL_FALSE\n");
         } else{
+
             gencode_function("ifgt LABEL_GT\n");
             gencode_label_flag = 1;
             return_goto_flag = 1;
@@ -891,12 +983,15 @@ relational_expression
     }
     | relational_expression LT additive_expression
     {
+        char tmp[16];
         gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
         if($1[1]==2 || $3[1]==2){
             gencode_function("fsub\n");
+            gencode_function("f2i\n");
         } else{
             gencode_function("isub\n");
         }
+
         if(while_flag){
             gencode_function("iflt LABEL_TRUE\n");
             gencode_function("goto LABEL_FALSE\n");
@@ -919,12 +1014,15 @@ relational_expression
     }
     | relational_expression MTE additive_expression
     {
+        char tmp[16];
         gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
         if($1[1]==2 || $3[1]==2){
             gencode_function("fsub\n");
+            gencode_function("f2i\n");
         } else{
             gencode_function("isub\n");
         }
+
         if(while_flag){
             gencode_function("ifge LABEL_TRUE\n");
             gencode_function("goto LABEL_FALSE\n");
@@ -947,9 +1045,11 @@ relational_expression
     }
     | relational_expression LTE additive_expression
     {
+        char tmp[16];
         gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
         if($1[1]==2 || $3[1]==2){
             gencode_function("fsub\n");
+            gencode_function("f2i\n");
         } else{
             gencode_function("isub\n");
         }
@@ -1035,7 +1135,13 @@ multiplicative_expression
     }
     | multiplicative_expression DIV unary_expression
     {
-
+        if($3[0] == 0) {
+            print_error("divide by zero", "");
+            $$[0] = 0;
+        }
+        else{
+            $$[0] = $1[0]/$3[0];
+        }
         gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
         if($1[1]==2 || $3[1]==2){
             gencode_function("fdiv\n");
@@ -1043,13 +1149,18 @@ multiplicative_expression
             gencode_function("idiv\n");
         }
 
-        $$[0] = $1[0]/$3[0];
-        $$[1] = 2;
+
+        $$[1] = ($1[1]==2 || $3[1]==2)? 2:1;
         $$[2] = 2;
     }
     | multiplicative_expression MOD unary_expression
     {
-
+        if ($1[1] != 1 || $3[1] != 1){
+            print_error("% with floating point operands", "");
+        }
+        if($3[0] == 0) {
+            print_error("Mod by Zero", "");
+        }
         gencode_ADD_SUB_MUL_DIV_MOD_function($1,$3);
         if($1[1]==2 || $3[1]==2){
             gencode_function("frem\n");
@@ -1125,9 +1236,12 @@ postfix_expression
     }
     | postfix_expression INC
     {
-        gencode_function("ldc 1\niadd\nistore 0\n");
+        gencode_function("ldc 1\niadd\n");
     }
     | postfix_expression DEC
+    {
+        gencode_function("ldc 1\nisub\n");
+    }
 ;
 
 argument_expression_list_opt
@@ -1206,11 +1320,14 @@ primary_expression
                 }
                 $$[0] = 10;
                 $$[1] = type;
+                $$[2] = 0;
             }else if(entry_type==0){
                 $$[0] = type;// function return type
                 $$[1] = index;//id index
+                $$[2] = 4;
             }else if(entry_type==1||entry_type==2){
                 int index = get_symbol_table_index($1);
+
                 switch(type) {
                     case 1:
                         gencode_function("iload ");
@@ -1219,7 +1336,7 @@ primary_expression
                         gencode_function("fload ");
                         break;
                     case 3:
-                        gencode_function("bload ");
+                        gencode_function("iload ");
                         break;
                     default:
                         gencode_function("vload ");
@@ -1228,13 +1345,14 @@ primary_expression
                 gencode_function(tmp);
                 $$[0] = 10;
                 $$[1] = type;
+                $$[2] = 5;
             }
         } else{
             printf("not found var!\n");
              $$[0] = 10;
              $$[1] = type;
+             $$[2] = 0;
         }
-        $$[2] = 0;
 
     }
     | const
@@ -1338,11 +1456,20 @@ int main(int argc, char** argv)
     //                 ".method public static main([Ljava/lang/String;)V\n");
 
     yyparse();
+    if(syntax_error_flag == 0){
+
+        if(buf[0] != '\0'){
+            printf("%d: %s\n", yylineno+1, buf);
+            ++yylineno;
+        }
+
+    }
     dump_all();
     printf("\nTotal lines: %d \n",yylineno);
 
     // fprintf(file, "\treturn\n"
     //               ".end method\n");
+
     fclose(file);
     fclose(file_label);
 
@@ -1366,12 +1493,61 @@ int main(int argc, char** argv)
 
 void yyerror(char *s)
 {
+    if(strstr(s, "syntax") != NULL)
+        syntax_error_flag = 1;
+
+    if(print_error_flag != 0){
+        if(had_print_flag == 0){
+            if(buf[0] == '\n')
+                printf("%d:%s", yylineno, buf);
+            else
+                printf("%d: %s\n", yylineno+1, buf);
+            had_print_flag = 1;
+        }
+        print_error_flag = 0;
+        printf("\n|-----------------------------------------------|\n");
+        if(syntax_error_flag == 1)
+            printf("| Error found in line %d: %s\n", yylineno+1, buf);
+        else
+            printf("| Error found in line %d: %s", yylineno, buf);
+        printf("| %s", error_buf);
+        printf("\n|-----------------------------------------------|\n\n");
+    }
+
+    if(had_print_flag == 0 && syntax_error_flag == 1){
+        if(buf[0] == '\n')
+            printf("%d:%s", yylineno, buf);
+        else
+            printf("%d: %s\n", yylineno+1, buf);
+        had_print_flag = 1;
+    }
+
     printf("\n|-----------------------------------------------|\n");
-    printf("| Error found in line %d: %s\n", yylineno, buf);
+    if(syntax_error_flag == 1)
+        printf("| Error found in line %d: %s\n", yylineno+1, buf);
+    else
+        printf("| Error found in line %d: %s", yylineno, buf);
     printf("| %s", s);
-    printf("\n| Unmatched token: %s", yytext);
-    printf("\n|-----------------------------------------------|\n");
-    exit(-1);
+    printf("\n|-----------------------------------------------|\n\n");
+
+    fclose(file);
+    fclose(file_label);
+    remove("compiler_hw3.j");
+    file_delete_flag = 1;
+    if(syntax_error_flag == 1) exit(-1);
+}
+
+void print_error(char* msg, char* Name){
+    sprintf(error_buf, "%s%s", msg, Name);
+    print_error_flag = 1;
+}
+
+void print_error_after_line(){
+    if(print_error_flag != 0){
+        print_error_flag = 0;
+        yyerror(error_buf);
+    }
+    print_error_flag = 0;
 }
 
 /* stmbol table functions */
@@ -1556,7 +1732,13 @@ int use_id_scope_get_type(char* id, int scope){
 }
 /* code generation functions */
 void gencode_function(char* codeline) {
-    fprintf(file, codeline);
+    if(gencode_label_flag){
+        gencode_labelcode_function(codeline);
+    }
+    else if(file_delete_flag == 0){
+        fprintf(file, codeline);
+    }
+
 }
 
 void gencode_labelcode_function(char* codeline){
@@ -1593,29 +1775,6 @@ void gencode_ADD_SUB_MUL_DIV_MOD_function(float* var1, float* var2){
     int tmp2 = var1[2];
     int tmp3 = var2[1];
     int tmp4 = var1[1];
-    if(tmp1==1){
-        gencode_function("ldc ");
-        switch(tmp3) {
-            case 1:
-                sprintf(tmp, "%d\n", (int)var2[0]);
-                break;
-            case 2:
-                sprintf(tmp, "%f\n", (float)var2[0]);
-                break;
-            case 3:
-                sprintf(tmp, "%d\n", (int)var2[0]);
-                break;
-            case 4:
-                gencode_function("Ljava/lang/String;\n");
-                break;
-            case 5:
-                sprintf(tmp, "%f\n", (float)var2[0]);
-                break;
-            default:
-                sprintf(tmp, "%f\n", (float)var2[0]);
-        }
-        gencode_function(tmp);
-    }
     if(tmp2==1){
         gencode_function("ldc ");
         switch(tmp4) {
@@ -1638,6 +1797,47 @@ void gencode_ADD_SUB_MUL_DIV_MOD_function(float* var1, float* var2){
                 sprintf(tmp, "%f\n", (float)var1[0]);
         }
         gencode_function(tmp);
+        if(var1[1] == 1 && var2[1] == 2)
+            gencode_function("i2f\n");
+    } else if(tmp2==0){
+        if(var1[1] == 1 && var2[1] == 2)
+            gencode_function("i2f\n");
+    } else if(tmp2==5){
+        // gencode_function("swap\n");
+        if(var1[1] == 1 && var2[1] == 2)
+            gencode_function("i2f\n");
+    }
+    if(tmp1==1){
+        gencode_function("ldc ");
+        switch(tmp3) {
+            case 1:
+                sprintf(tmp, "%d\n", (int)var2[0]);
+                break;
+            case 2:
+                sprintf(tmp, "%f\n", (float)var2[0]);
+                break;
+            case 3:
+                sprintf(tmp, "%d\n", (int)var2[0]);
+                break;
+            case 4:
+                gencode_function("Ljava/lang/String;\n");
+                break;
+            case 5:
+                sprintf(tmp, "%f\n", (float)var2[0]);
+                break;
+            default:
+                sprintf(tmp, "%f\n", (float)var2[0]);
+        }
+        gencode_function(tmp);
+        if(var1[1] == 2 && var2[1] == 1)
+            gencode_function("i2f\n");
+    } else if(tmp1==0){
+        if(var1[1] == 2 && var2[1] == 1)
+            gencode_function("i2f\n");
+    } else if(tmp1==5){
+        // gencode_function("swap\n");
+        if(var1[1] == 2 && var2[1] == 1)
+            gencode_function("i2f\n");
     }
 }
 
