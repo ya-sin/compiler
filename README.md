@@ -11,3 +11,6 @@
 - run
 ```make test```
 - result in ans1.out, ans2.out, ans3.out
+
+## homework3
+![flow](./flow.png)
